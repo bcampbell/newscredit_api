@@ -1,3 +1,4 @@
+# vim:set ts=2 sts=2 sw=2 expandtab:
 from django.db import models
 from django.contrib import admin, databrowse
 from locallibs.aump import hall, hatom
@@ -7,8 +8,9 @@ from datetime import datetime, timedelta
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
 from urlparse import urlparse
-from BeautifulSoup import BeautifulSoup
+#from BeautifulSoup import BeautifulSoup
 import pprint, urllib2, re, os, time, simplejson
+import html5lib
 
 #browse tags
 
@@ -72,9 +74,7 @@ class FeedPage(models.Model):
     self.save()
     html = urllib2.urlopen(url).read()
     parser = hatom.MicroformatHAtom()
-    import html5lib
-    from html5lib import treebuilders
-    htmlparser = html5lib.HTMLParser(tree=treebuilders.getTreeBuilder("dom"))
+    htmlparser = html5lib.HTMLParser(tree=html5lib.treebuilders.getTreeBuilder("dom"))
     dom = htmlparser.parse(html)
     parser.Feed(dom)
     results = [result for result in parser.Iterate()]          
@@ -282,6 +282,42 @@ class Revision(models.Model):
   entry_title = models.TextField("Title")
   entry_content = models.TextField("Content", null=True, blank=True)
   entry_summary = models.TextField("Summary")
+
+
+
+
+def scrape_article_page( url ):
+  """ scrape a page for a single article. Returns list of Article objects or None """
+
+  # TODO: get rid of this, refactor FeedPage.fetch instead
+
+  articles = []
+
+  html = urllib2.urlopen(url).read()
+  parser = hatom.MicroformatHAtom()
+  htmlparser = html5lib.HTMLParser(tree=html5lib.treebuilders.getTreeBuilder("dom"))
+  dom = htmlparser.parse(html)
+  parser.Feed(dom)
+  results = [result for result in parser.Iterate()]
+  # create articles and/or revision from results
+  for result in results:
+    if result.get('bookmark'):
+      if re.match('http://', result.get('bookmark')):
+        bookmark = result.get('bookmark')
+      elif re.match('/', result.get('bookmark')):
+        bookmark = 'http://' + urlparse(url).netloc + result.get('bookmark')
+      else:
+        bookmark = url + result.get('bookmark')
+    else:
+      bookmark = url
+    article, created = Article.objects.get_or_create(bookmark=bookmark)
+    article.from_hatom_parsed(result)
+    article.save()
+    articles.append( article )
+
+  return articles
+
+
 
 try:
   databrowse.site.register(Tag)
